@@ -1,0 +1,1456 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mapa Interactivo de Zonas y Prestadores SML</title>
+
+  <!-- Fuente Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Leaflet CSS y JS para mapas interactivos -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Iconos Lucide -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased overflow-hidden">
+  <!-- Contenedor Principal Responsivo -->
+  <div class="flex flex-col md:flex-row h-screen w-full overflow-hidden">
+    
+    <!-- ================= PANEL LATERAL IZQUIERDO ================= -->
+    <aside class="w-full md:w-[410px] lg:w-[440px] bg-white border-r border-slate-200 shadow-lg z-20 flex flex-col h-[52vh] md:h-full">
+      
+      <!-- Encabezado y Herramientas de Archivo -->
+      <div class="px-4 py-3.5 bg-slate-900 text-white flex items-center justify-between shrink-0">
+        <div>
+          <h1 class="text-base sm:text-lg font-bold flex items-center gap-2 tracking-tight">
+            <i data-lucide="map" class="h-5 w-5 text-blue-400"></i>
+            Mapa de Zonas SML
+          </h1>
+          <p class="text-[11px] sm:text-xs text-slate-300 mt-0.5">
+            Provincias, Prestadores y Gestores
+          </p>
+        </div>
+
+        <!-- Botones Exportar / Importar / Restaurar -->
+        <div class="flex items-center gap-1">
+          <button
+            id="btn-export-json"
+            title="Descargar copia de seguridad (JSON)"
+            class="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1 text-xs"
+          >
+            <i data-lucide="download" class="h-4 w-4"></i>
+          </button>
+          <label
+            title="Cargar archivo JSON guardado"
+            class="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer flex items-center gap-1 text-xs"
+          >
+            <i data-lucide="upload" class="h-4 w-4"></i>
+            <input id="input-import-json" type="file" accept=".json" class="hidden" />
+          </label>
+          <button
+            id="btn-reset-defaults"
+            title="Restaurar datos originales de la planilla"
+            class="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+          >
+            <i data-lucide="rotate-ccw" class="h-4 w-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Controles de Vista, Gestores y Búsqueda -->
+      <div class="p-3.5 border-b border-slate-200 bg-slate-50/70 shrink-0 space-y-3">
+        <!-- Selector de Mapa: Provincias vs Prestadores -->
+        <div class="grid grid-cols-2 gap-1.5 bg-slate-200/80 p-1 rounded-xl">
+          <button
+            id="tab-provincia"
+            data-layer="provincia"
+            class="layer-tab py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all bg-white text-blue-700 shadow-sm"
+          >
+            <i data-lucide="map-pin" class="h-4 w-4"></i>
+            Mapa Provincias
+          </button>
+          <button
+            id="tab-prestador"
+            data-layer="prestador"
+            class="layer-tab py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all text-slate-600 hover:text-slate-900"
+          >
+            <i data-lucide="building-2" class="h-4 w-4"></i>
+            Mapa Prestadores
+          </button>
+        </div>
+
+        <!-- Filtro por Gestor (Leyenda Interactiva) -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              Filtrar por Gestor
+            </span>
+            <span id="visible-count-label" class="text-[11px] font-medium text-slate-500">
+              0 visibles
+            </span>
+          </div>
+          <div id="manager-filters" class="flex flex-wrap gap-1.5">
+            <!-- Se renderiza dinámicamente por JS -->
+          </div>
+        </div>
+
+        <!-- Buscador + Botón Cargar -->
+        <div class="flex gap-2">
+          <div class="relative flex-1">
+            <i data-lucide="search" class="h-4 w-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+            <input
+              id="search-input"
+              type="text"
+              placeholder="Buscar provincia, prestador o nota..."
+              class="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-lg text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            />
+          </div>
+          <button
+            id="btn-open-create"
+            class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold flex items-center gap-1.5 shadow-sm transition-colors shrink-0"
+          >
+            <i data-lucide="plus-circle" class="h-4 w-4"></i>
+            Cargar
+          </button>
+        </div>
+      </div>
+
+      <!-- Lista Interactiva de Registros -->
+      <div id="markers-list" class="flex-1 overflow-y-auto p-3 space-y-2.5 bg-slate-50/40">
+        <!-- Tarjetas generadas dinámicamente -->
+      </div>
+    </aside>
+
+    <!-- ================= ÁREA DEL MAPA PRINCIPAL ================= -->
+    <main class="flex-1 relative h-[48vh] md:h-full z-10">
+      <div id="map" class="w-full h-full"></div>
+
+      <!-- Indicadores Flotantes Superiores -->
+      <div class="absolute top-4 right-4 z-[400] flex flex-col items-end gap-2 pointer-events-none">
+        <div class="bg-white/95 backdrop-blur-sm px-4 py-2 rounded-full shadow-md border border-slate-200 flex items-center gap-2 pointer-events-auto">
+          <span class="w-2.5 h-2.5 rounded-full bg-blue-600 animate-pulse"></span>
+          <span id="view-badge-text" class="text-xs sm:text-sm font-bold text-slate-700">
+            Vista: Mapa de Provincias y Zonas
+          </span>
+        </div>
+
+        <!-- Banner Modo Selección en Mapa -->
+        <div
+          id="pick-mode-banner"
+          class="hidden bg-amber-500 text-white px-4 py-2.5 rounded-xl shadow-lg items-center gap-3 pointer-events-auto"
+        >
+          <i data-lucide="crosshair" class="h-5 w-5 shrink-0"></i>
+          <div class="text-xs font-semibold">
+            Hacé clic en cualquier punto del mapa para capturar su ubicación
+          </div>
+          <button
+            id="btn-cancel-pick"
+            class="bg-amber-700 hover:bg-amber-800 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors"
+          >
+            Cancelar
+          </button>
+        </div>
+      </div>
+
+      <!-- Notificación Flotante (Toast) -->
+      <div
+        id="toast-notification"
+        class="hidden absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] px-4 py-2.5 rounded-xl shadow-lg text-xs sm:text-sm font-semibold items-center gap-2 border transition-all"
+      >
+        <i data-lucide="check-circle-2" class="h-4 w-4 shrink-0"></i>
+        <span id="toast-text"></span>
+      </div>
+    </main>
+  </div>
+
+  <!-- ================= MODAL PARA CARGAR / EDITAR ================= -->
+  <div
+    id="form-modal"
+    class="hidden fixed inset-0 z-[1000] bg-slate-900/50 backdrop-blur-sm items-center justify-center p-4"
+  >
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
+      <div class="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
+        <h2 id="modal-title" class="text-base font-bold flex items-center gap-2">
+          <i data-lucide="plus-circle" class="h-5 w-5 text-blue-400"></i>
+          <span>Cargar Nueva Provincia o Prestador</span>
+        </h2>
+        <button id="btn-close-modal" class="text-slate-400 hover:text-white p-1 rounded-lg">
+          <i data-lucide="x" class="h-5 w-5"></i>
+        </button>
+      </div>
+
+      <form id="marker-form" class="p-5 space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">Tipo de Mapa</label>
+            <select
+              id="field-type"
+              class="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+            >
+              <option value="provincia">Provincia / Zona</option>
+              <option value="prestador">Prestador / Clínica</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-600 mb-1">Gestor Asignado</label>
+            <select
+              id="field-manager"
+              class="w-full p-2.5 border border-slate-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+            >
+              <option value="MATI">MATI</option>
+              <option value="TOMI">TOMI</option>
+              <option value="SOL">SOL</option>
+              <option value="FEDE">FEDE</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">
+            Nombre (Provincia, Localidad o Prestador) *
+          </label>
+          <input
+            id="field-name"
+            type="text"
+            required
+            placeholder="Ej: Sanatorio Allende / Provincia de San Juan"
+            class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+          />
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">
+            Dirección (para búsqueda y Google Maps)
+          </label>
+          <div class="flex gap-2">
+            <input
+              id="field-address"
+              type="text"
+              placeholder="Ej: Av. Hipólito Yrigoyen 384, Córdoba"
+              class="flex-1 p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            <button
+              type="button"
+              id="btn-geocode"
+              title="Buscar coordenadas automáticamente"
+              class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors"
+            >
+              <i data-lucide="search" class="h-4 w-4"></i>
+              <span id="btn-geocode-text">Ubicar</span>
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-bold text-slate-600">
+              Coordenadas (Latitud / Longitud) *
+            </label>
+            <button
+              type="button"
+              id="btn-pick-on-map"
+              class="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+            >
+              <i data-lucide="crosshair" class="h-3.5 w-3.5"></i>
+              Elegir haciendo clic en el mapa
+            </button>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <input
+              id="field-lat"
+              type="number"
+              step="any"
+              required
+              placeholder="Latitud (ej: -31.42)"
+              class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            <input
+              id="field-lng"
+              type="number"
+              step="any"
+              required
+              placeholder="Longitud (ej: -64.18)"
+              class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-600 mb-1">
+            Notas, Derivaciones o Especialidades
+          </label>
+          <textarea
+            id="field-notes"
+            rows="2"
+            placeholder="Ej: Atiende casos EP, derivaciones de zona, teléfonos..."
+            class="w-full p-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none"
+          ></textarea>
+        </div>
+
+        <div class="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+          <button
+            type="button"
+            id="btn-cancel-form"
+            class="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            id="btn-submit-form"
+            class="px-5 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition-colors flex items-center gap-1.5"
+          >
+            <i data-lucide="check" class="h-4 w-4"></i>
+            <span>Agregar al Mapa</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ================= MODAL DE CONFIRMACIÓN PERSONALIZADO ================= -->
+  <div
+    id="confirm-modal"
+    class="hidden fixed inset-0 z-[1100] bg-slate-900/50 backdrop-blur-sm items-center justify-center p-4"
+  >
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm p-5 space-y-4">
+      <div class="flex items-center gap-3">
+        <div class="p-2.5 bg-amber-100 text-amber-600 rounded-xl">
+          <i data-lucide="alert-triangle" class="h-5 w-5"></i>
+        </div>
+        <div>
+          <h3 id="confirm-title" class="text-sm font-bold text-slate-900">Confirmar acción</h3>
+          <p id="confirm-message" class="text-xs text-slate-500 mt-0.5"></p>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button
+          id="btn-confirm-cancel"
+          class="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+        >
+          Cancelar
+        </button>
+        <button
+          id="btn-confirm-accept"
+          class="px-4 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+        >
+          Confirmar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= LÓGICA DE LA APLICACIÓN ================= -->
+  <script>
+    // --- CONFIGURACIÓN DE GESTORES Y COLORES ---
+    const MANAGERS = {
+      MATI: { name: 'MATI', color: '#2563eb', bgClass: 'bg-blue-600' },
+      TOMI: { name: 'TOMI', color: '#16a34a', bgClass: 'bg-green-600' },
+      SOL:  { name: 'SOL',  color: '#9333ea', bgClass: 'bg-purple-600' },
+      FEDE: { name: 'FEDE', color: '#dc2626', bgClass: 'bg-red-600' },
+    };
+
+    // --- DATOS INICIALES EXTRAÍDOS DE ZONAS SML EQUIPO ---
+    const INITIAL_MARKERS = [
+      // ================= PROVINCIAS Y ZONAS =================
+      {
+        id: 'prov-entre-rios',
+        name: 'Entre Ríos',
+        type: 'provincia',
+        manager: 'MATI',
+        address: 'Provincia de Entre Ríos, Argentina',
+        notes: 'Se atiende en Sanatorio Mayo Santa Fe',
+        lat: -32.0588,
+        lng: -59.2014,
+      },
+      {
+        id: 'prov-cordoba',
+        name: 'Córdoba',
+        type: 'provincia',
+        manager: 'MATI',
+        address: 'Provincia de Córdoba, Argentina',
+        notes: 'Gestión ASECOR / Sanatorio Mayo CBA / Casos Legales Heavys',
+        lat: -31.4201,
+        lng: -64.1888,
+      },
+      {
+        id: 'prov-la-rioja',
+        name: 'La Rioja',
+        type: 'provincia',
+        manager: 'MATI',
+        address: 'Provincia de La Rioja, Argentina',
+        notes: 'ACC-PTES derivados a Sanatorio Mayo CBA',
+        lat: -29.4135,
+        lng: -66.8558,
+      },
+      {
+        id: 'prov-santa-fe',
+        name: 'Santa Fe (Capital y Centro)',
+        type: 'provincia',
+        manager: 'MATI',
+        address: 'Santa Fe Capital, Santa Fe, Argentina',
+        notes: 'Atención en Sanatorio Mayo Santa Fe Capital',
+        lat: -31.6107,
+        lng: -60.6973,
+      },
+      {
+        id: 'prov-mendoza',
+        name: 'Mendoza',
+        type: 'provincia',
+        manager: 'TOMI',
+        address: 'Provincia de Mendoza, Argentina',
+        notes: 'Gestión provincial integral + Casos Salud Mental y EP',
+        lat: -32.8895,
+        lng: -68.8458,
+      },
+      {
+        id: 'prov-rio-negro',
+        name: 'Río Negro',
+        type: 'provincia',
+        manager: 'TOMI',
+        address: 'Provincia de Río Negro, Argentina',
+        notes: 'Cobertura provincial asignada a Tomi',
+        lat: -40.8135,
+        lng: -63.0000,
+      },
+      {
+        id: 'prov-la-pampa',
+        name: 'La Pampa',
+        type: 'provincia',
+        manager: 'TOMI',
+        address: 'Provincia de La Pampa, Argentina',
+        notes: 'Cobertura provincial asignada a Tomi',
+        lat: -36.6167,
+        lng: -64.2833,
+      },
+      {
+        id: 'prov-santa-cruz',
+        name: 'Santa Cruz',
+        type: 'provincia',
+        manager: 'TOMI',
+        address: 'Provincia de Santa Cruz, Argentina',
+        notes: 'Cobertura provincial asignada a Tomi',
+        lat: -48.8155,
+        lng: -69.9558,
+      },
+      {
+        id: 'prov-bahia-blanca',
+        name: 'Bahía Blanca (Zona Sur Bs. As.)',
+        type: 'provincia',
+        manager: 'TOMI',
+        address: 'Bahía Blanca, Provincia de Buenos Aires, Argentina',
+        notes: 'Nodo regional Sur de Buenos Aires',
+        lat: -38.7183,
+        lng: -62.2663,
+      },
+      {
+        id: 'prov-tierra-del-fuego',
+        name: 'Tierra del Fuego',
+        type: 'provincia',
+        manager: 'SOL',
+        address: 'Provincia de Tierra del Fuego, Argentina',
+        notes: 'Cobertura provincial asignada a Sol',
+        lat: -54.8019,
+        lng: -68.3030,
+      },
+      {
+        id: 'prov-catamarca',
+        name: 'Catamarca',
+        type: 'provincia',
+        manager: 'SOL',
+        address: 'Provincia de Catamarca, Argentina',
+        notes: 'Cobertura provincial asignada a Sol',
+        lat: -28.4696,
+        lng: -65.7795,
+      },
+      {
+        id: 'prov-neuquen',
+        name: 'Neuquén',
+        type: 'provincia',
+        manager: 'SOL',
+        address: 'Provincia de Neuquén, Argentina',
+        notes: 'Cobertura provincial asignada a Sol',
+        lat: -38.9516,
+        lng: -68.0591,
+      },
+      {
+        id: 'prov-tucuman',
+        name: 'Tucumán',
+        type: 'provincia',
+        manager: 'SOL',
+        address: 'Provincia de Tucumán, Argentina',
+        notes: 'Cobertura provincial + Casos EP e Hipoacusias',
+        lat: -26.8083,
+        lng: -65.2176,
+      },
+      {
+        id: 'prov-salta',
+        name: 'Salta',
+        type: 'provincia',
+        manager: 'FEDE',
+        address: 'Provincia de Salta, Argentina',
+        notes: 'Cobertura NOA asignada a Fede',
+        lat: -24.7821,
+        lng: -65.4232,
+      },
+      {
+        id: 'prov-jujuy',
+        name: 'Jujuy',
+        type: 'provincia',
+        manager: 'FEDE',
+        address: 'Provincia de Jujuy, Argentina',
+        notes: 'Cobertura NOA asignada a Fede',
+        lat: -24.1858,
+        lng: -65.2995,
+      },
+      {
+        id: 'prov-formosa',
+        name: 'Formosa',
+        type: 'provincia',
+        manager: 'FEDE',
+        address: 'Provincia de Formosa, Argentina',
+        notes: 'Cobertura NEA asignada a Fede',
+        lat: -26.1849,
+        lng: -58.1731,
+      },
+      {
+        id: 'prov-misiones',
+        name: 'Misiones',
+        type: 'provincia',
+        manager: 'FEDE',
+        address: 'Provincia de Misiones, Argentina',
+        notes: 'Cobertura NEA asignada a Fede',
+        lat: -27.3671,
+        lng: -55.8961,
+      },
+      {
+        id: 'prov-corrientes',
+        name: 'Corrientes',
+        type: 'provincia',
+        manager: 'FEDE',
+        address: 'Provincia de Corrientes, Argentina',
+        notes: 'Cobertura NEA asignada a Fede',
+        lat: -27.4692,
+        lng: -58.8306,
+      },
+      {
+        id: 'prov-santiago-del-estero',
+        name: 'Santiago del Estero',
+        type: 'provincia',
+        manager: 'FEDE',
+        address: 'Provincia de Santiago del Estero, Argentina',
+        notes: 'Cobertura provincial asignada a Fede',
+        lat: -27.7951,
+        lng: -64.2615,
+      },
+      {
+        id: 'prov-chubut',
+        name: 'Chubut',
+        type: 'provincia',
+        manager: 'FEDE',
+        address: 'Provincia de Chubut, Argentina',
+        notes: 'Cobertura patagónica asignada a Fede',
+        lat: -43.2934,
+        lng: -65.1115,
+      },
+      {
+        id: 'prov-mar-del-plata',
+        name: 'Mar del Plata (Zona Costa Atlántica)',
+        type: 'provincia',
+        manager: 'FEDE',
+        address: 'Mar del Plata, Provincia de Buenos Aires, Argentina',
+        notes: 'Nodo regional Costa Atlántica',
+        lat: -38.0055,
+        lng: -57.5426,
+      },
+
+      // ================= PRESTADORES =================
+      {
+        id: 'prest-sanatorio-mayo-cba',
+        name: 'Sanatorio Mayo Córdoba',
+        type: 'prestador',
+        manager: 'MATI',
+        address: 'Humberto Primo 520, B° Centro, Córdoba Capital',
+        notes: 'Atiende Córdoba y ACC-PTES de La Rioja',
+        lat: -31.4098,
+        lng: -64.1873,
+      },
+      {
+        id: 'prest-asecor',
+        name: 'ASECOR',
+        type: 'prestador',
+        manager: 'MATI',
+        address: 'Av. Colón 650, Córdoba Capital',
+        notes: 'Gerenciadora / Casos de Legales Heavys',
+        lat: -31.4126,
+        lng: -64.1912,
+      },
+      {
+        id: 'prest-sanatorio-mayo-stafe',
+        name: 'Sanatorio Mayo Santa Fe',
+        type: 'prestador',
+        manager: 'MATI',
+        address: 'Suipacha 2453, Santa Fe Capital',
+        notes: 'Atiende Santa Fe Capital y derivaciones de Entre Ríos',
+        lat: -31.6401,
+        lng: -60.7061,
+      },
+      {
+        id: 'prest-fitz-roy',
+        name: 'Centro Médico Integral Fitz Roy',
+        type: 'prestador',
+        manager: 'MATI',
+        address: 'Acevedo 865, Villa Crespo, CABA',
+        notes: 'Prestador ART / Medicina Laboral CABA',
+        lat: -34.5956,
+        lng: -58.4384,
+      },
+      {
+        id: 'prest-charles-oftalmos',
+        name: 'Centro Oftalmológico Dr. Charles / Oftalmos',
+        type: 'prestador',
+        manager: 'MATI',
+        address: 'Riobamba 841, Recoleta, CABA',
+        notes: 'Especialidad Oftalmología',
+        lat: -34.5979,
+        lng: -58.3948,
+      },
+      {
+        id: 'prest-clinica-solis-tomi',
+        name: 'Clínica Solís (Zona Tomi / Sol)',
+        type: 'prestador',
+        manager: 'TOMI',
+        address: 'Paraguay 2167, San Justo, Buenos Aires',
+        notes: 'Abarca Zona Oeste / AMBA (Compartido con Sol)',
+        lat: -34.6776,
+        lng: -58.5594,
+      },
+      {
+        id: 'prest-medisegur',
+        name: 'Medisegur (Red Médica)',
+        type: 'prestador',
+        manager: 'TOMI',
+        address: 'Av. Corrientes 1386, CABA',
+        notes: 'Casos Salud Mental, Casos EP e Hipoacusias (Tomi / Sol)',
+        lat: -34.6039,
+        lng: -58.3863,
+      },
+      {
+        id: 'prest-modelo-quilmes',
+        name: 'Sanatorio Modelo Quilmes',
+        type: 'prestador',
+        manager: 'SOL',
+        address: 'Andrés Baranda 282, Quilmes, Buenos Aires',
+        notes: 'Prestador Zona Sur AMBA',
+        lat: -34.7242,
+        lng: -58.2608,
+      },
+      {
+        id: 'prest-praxart',
+        name: 'Centro Médico PraxArt',
+        type: 'prestador',
+        manager: 'FEDE',
+        address: 'Serrano 643, Villa Crespo, CABA',
+        notes: 'Traumatología, Clínica Médica y Rehabilitación',
+        lat: -34.5972,
+        lng: -58.4395,
+      },
+      {
+        id: 'prest-rosario-mapaci',
+        name: 'Sanatorio Mapaci (Rosario)',
+        type: 'prestador',
+        manager: 'FEDE',
+        address: 'Bv. Oroño 1458, Rosario, Santa Fe',
+        notes: 'Prestador referencia Rosario y Sur de Santa Fe',
+        lat: -32.9522,
+        lng: -60.6545,
+      },
+    ];
+
+    // --- ESTADO GLOBAL EN MEMORIA ---
+    const state = {
+      markers: JSON.parse(JSON.stringify(INITIAL_MARKERS)),
+      activeLayer: 'provincia', // 'provincia' | 'prestador'
+      selectedManager: 'TODOS',
+      searchQuery: '',
+      selectedMarkerId: null,
+      editingId: null,
+      pickMode: false,
+      confirmCallback: null,
+    };
+
+    // Referencias Leaflet
+    let map = null;
+    let markersLayerGroup = null;
+    let leafletMarkersById = {};
+    let toastTimeout = null;
+
+    // Escapar caracteres HTML para evitar inyecciones en popups/tarjetas
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // Mostrar notificación flotante
+    function showToast(text, type = 'success') {
+      const toastEl = document.getElementById('toast-notification');
+      const textEl = document.getElementById('toast-text');
+      textEl.textContent = text;
+
+      toastEl.className =
+        'flex absolute bottom-5 left-1/2 -translate-x-1/2 z-[500] px-4 py-2.5 rounded-xl shadow-lg text-xs sm:text-sm font-semibold items-center gap-2 border transition-all ';
+
+      if (type === 'error') {
+        toastEl.className += 'bg-red-600 text-white border-red-700';
+      } else if (type === 'info') {
+        toastEl.className += 'bg-slate-800 text-white border-slate-900';
+      } else {
+        toastEl.className += 'bg-emerald-600 text-white border-emerald-700';
+      }
+
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        toastEl.classList.add('hidden');
+        toastEl.classList.remove('flex');
+      }, 3500);
+    }
+
+    // Modal de confirmación personalizado (sin window.confirm)
+    function openConfirmModal(title, message, onConfirm) {
+      document.getElementById('confirm-title').textContent = title;
+      document.getElementById('confirm-message').textContent = message;
+      state.confirmCallback = onConfirm;
+      const modal = document.getElementById('confirm-modal');
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closeConfirmModal() {
+      const modal = document.getElementById('confirm-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      state.confirmCallback = null;
+    }
+
+    // Inicializar mapa Leaflet
+    function initMap() {
+      map = L.map('map', {
+        center: [-38.4161, -63.6167],
+        zoom: 4,
+        zoomControl: true,
+      });
+
+      // Capas base gratuitas sin necesidad de API Key
+      const osmLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19,
+      });
+
+      const esriStreetLayer = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+        {
+          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, HERE, Garmin, USGS, Intermap',
+          maxZoom: 18,
+        }
+      );
+
+      const esriLightLayer = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+        {
+          attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+          maxZoom: 16,
+        }
+      );
+
+      const esriSatelliteLayer = L.tileLayer(
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+        {
+          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
+          maxZoom: 18,
+        }
+      );
+
+      // Activar capa principal (OpenStreetMap sin API key) con respaldo automático a Esri
+      let fallbackActivated = false;
+      osmLayer.on('tileerror', () => {
+        if (!fallbackActivated && map && !map.hasLayer(esriStreetLayer)) {
+          fallbackActivated = true;
+          map.removeLayer(osmLayer);
+          esriStreetLayer.addTo(map);
+        }
+      });
+
+      osmLayer.addTo(map);
+
+      // Selector de estilo de mapa en la esquina inferior izquierda
+      L.control
+        .layers(
+          {
+            'Mapa Calles (OSM)': osmLayer,
+            'Mapa Detallado (Esri)': esriStreetLayer,
+            'Mapa Claro': esriLightLayer,
+            'Vista Satélite': esriSatelliteLayer,
+          },
+          null,
+          { position: 'bottomleft' }
+        )
+        .addTo(map);
+
+      markersLayerGroup = L.layerGroup().addTo(map);
+
+      // Capturar clic en mapa cuando está activo el modo selección
+      map.on('click', (e) => {
+        if (!state.pickMode) return;
+        const lat = Number(e.latlng.lat.toFixed(5));
+        const lng = Number(e.latlng.lng.toFixed(5));
+        document.getElementById('field-lat').value = lat;
+        document.getElementById('field-lng').value = lng;
+        setPickMode(false);
+        openFormModal(Boolean(state.editingId));
+        showToast(`Coordenadas capturadas: ${lat}, ${lng}`, 'success');
+      });
+
+      window.addEventListener('resize', () => {
+        if (map) map.invalidateSize();
+      });
+
+      setTimeout(() => map.invalidateSize(), 200);
+    }
+
+    // Activar/Desactivar modo selección de coordenadas en el mapa
+    function setPickMode(enabled) {
+      state.pickMode = enabled;
+      const mapEl = document.getElementById('map');
+      const bannerEl = document.getElementById('pick-mode-banner');
+      if (enabled) {
+        mapEl.classList.add('cursor-crosshair');
+        bannerEl.classList.remove('hidden');
+        bannerEl.classList.add('flex');
+      } else {
+        mapEl.classList.remove('cursor-crosshair');
+        bannerEl.classList.add('hidden');
+        bannerEl.classList.remove('flex');
+      }
+    }
+
+    // Obtener registros filtrados según pestaña, gestor y búsqueda
+    function getFilteredMarkers() {
+      const q = state.searchQuery.trim().toLowerCase();
+      return state.markers.filter((item) => {
+        if (item.type !== state.activeLayer) return false;
+        if (state.selectedManager !== 'TODOS' && item.manager !== state.selectedManager) {
+          return false;
+        }
+        if (q) {
+          const matchName = (item.name || '').toLowerCase().includes(q);
+          const matchAddr = (item.address || '').toLowerCase().includes(q);
+          const matchNotes = (item.notes || '').toLowerCase().includes(q);
+          const matchMgr = (item.manager || '').toLowerCase().includes(q);
+          if (!matchName && !matchAddr && !matchNotes && !matchMgr) return false;
+        }
+        return true;
+      });
+    }
+
+    // Renderizar botones de filtro por Gestor con contadores
+    function renderManagerFilters() {
+      const container = document.getElementById('manager-filters');
+      const counts = { TODOS: 0, MATI: 0, TOMI: 0, SOL: 0, FEDE: 0 };
+
+      state.markers.forEach((m) => {
+        if (m.type === state.activeLayer) {
+          counts.TODOS += 1;
+          if (counts[m.manager] !== undefined) counts[m.manager] += 1;
+        }
+      });
+
+      let html = `
+        <button
+          data-mgr="TODOS"
+          class="mgr-filter-btn px-2.5 py-1 rounded-full text-xs font-semibold border transition-all ${
+            state.selectedManager === 'TODOS'
+              ? 'bg-slate-800 text-white border-slate-800 shadow-sm'
+              : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+          }"
+        >
+          Todos (${counts.TODOS})
+        </button>
+      `;
+
+      Object.values(MANAGERS).forEach((mgr) => {
+        const isActive = state.selectedManager === mgr.name;
+        html += `
+          <button
+            data-mgr="${mgr.name}"
+            class="mgr-filter-btn px-2.5 py-1 rounded-full text-xs font-semibold border flex items-center gap-1.5 transition-all ${
+              isActive
+                ? `${mgr.bgClass} text-white border-transparent shadow-sm`
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+            }"
+          >
+            <span class="w-2 h-2 rounded-full ${isActive ? 'bg-white' : mgr.bgClass}"></span>
+            ${mgr.name} (${counts[mgr.name] || 0})
+          </button>
+        `;
+      });
+
+      container.innerHTML = html;
+
+      container.querySelectorAll('.mgr-filter-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const clickedMgr = btn.getAttribute('data-mgr');
+          state.selectedManager =
+            state.selectedManager === clickedMgr && clickedMgr !== 'TODOS' ? 'TODOS' : clickedMgr;
+          renderAll();
+        });
+      });
+    }
+
+    // Renderizar lista lateral de tarjetas
+    function renderSidebarList(filteredMarkers) {
+      const listEl = document.getElementById('markers-list');
+      document.getElementById('visible-count-label').textContent = `${filteredMarkers.length} visibles`;
+
+      if (filteredMarkers.length === 0) {
+        listEl.innerHTML = `
+          <div class="text-center py-10 px-4">
+            <i data-lucide="layers" class="h-8 w-8 text-slate-300 mx-auto mb-2"></i>
+            <p class="text-sm font-medium text-slate-600">
+              No se encontraron registros con este filtro.
+            </p>
+            <button
+              id="btn-empty-create"
+              class="mt-3 text-xs font-semibold text-blue-600 hover:underline"
+            >
+              + Agregar nuevo ${state.activeLayer === 'provincia' ? 'provincia/zona' : 'prestador'}
+            </button>
+          </div>
+        `;
+        lucide.createIcons();
+        const emptyBtn = document.getElementById('btn-empty-create');
+        if (emptyBtn) emptyBtn.addEventListener('click', handleCreateClick);
+        return;
+      }
+
+      listEl.innerHTML = filteredMarkers
+        .map((item) => {
+          const mgr = MANAGERS[item.manager] || { bgClass: 'bg-slate-600' };
+          const isSelected = state.selectedMarkerId === item.id;
+          const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+            item.address || `${item.name}, Argentina`
+          )}`;
+
+          return `
+            <div
+              data-id="${escapeHtml(item.id)}"
+              class="marker-card p-3 rounded-xl border transition-all cursor-pointer group ${
+                isSelected
+                  ? 'bg-blue-50/80 border-blue-400 shadow-sm ring-1 ring-blue-400'
+                  : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'
+              }"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="px-2 py-0.5 rounded-md text-[11px] font-bold text-white shrink-0 ${mgr.bgClass}">
+                    ${escapeHtml(item.manager)}
+                  </span>
+                  <h3 class="font-bold text-sm text-slate-800 truncate">
+                    ${escapeHtml(item.name)}
+                  </h3>
+                </div>
+
+                <div class="flex items-center gap-1 opacity-85 group-hover:opacity-100 shrink-0">
+                  <a
+                    href="${googleMapsUrl}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Abrir en Google Maps"
+                    class="card-link p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                  >
+                    <i data-lucide="external-link" class="h-3.5 w-3.5"></i>
+                  </a>
+                  <button
+                    type="button"
+                    data-edit-id="${escapeHtml(item.id)}"
+                    title="Editar información"
+                    class="btn-edit-card p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
+                  >
+                    <i data-lucide="edit-3" class="h-3.5 w-3.5"></i>
+                  </button>
+                  <button
+                    type="button"
+                    data-del-id="${escapeHtml(item.id)}"
+                    title="Eliminar"
+                    class="btn-del-card p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                  >
+                    <i data-lucide="trash-2" class="h-3.5 w-3.5"></i>
+                  </button>
+                </div>
+              </div>
+
+              ${
+                item.address
+                  ? `<p class="text-xs text-slate-500 mt-1.5 flex items-start gap-1.5">
+                      <i data-lucide="navigation" class="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5"></i>
+                      <span class="line-clamp-2">${escapeHtml(item.address)}</span>
+                    </p>`
+                  : ''
+              }
+
+              ${
+                item.notes
+                  ? `<div class="text-xs text-slate-600 mt-1.5 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-100 flex items-start gap-1.5">
+                      <i data-lucide="file-text" class="h-3.5 w-3.5 text-slate-400 shrink-0 mt-0.5"></i>
+                      <span>${escapeHtml(item.notes)}</span>
+                    </div>`
+                  : ''
+              }
+            </div>
+          `;
+        })
+        .join('');
+
+      lucide.createIcons();
+
+      // Eventos en cada tarjeta
+      listEl.querySelectorAll('.marker-card').forEach((card) => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.card-link') || e.target.closest('button')) return;
+          const id = card.getAttribute('data-id');
+          selectMarker(id, true);
+        });
+      });
+
+      listEl.querySelectorAll('.btn-edit-card').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = btn.getAttribute('data-edit-id');
+          handleEditClick(id);
+        });
+      });
+
+      listEl.querySelectorAll('.btn-del-card').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = btn.getAttribute('data-del-id');
+          handleDeleteClick(id);
+        });
+      });
+    }
+
+    // Renderizar pines en el mapa Leaflet
+    function renderMapMarkers(filteredMarkers) {
+      if (!map || !markersLayerGroup) return;
+      markersLayerGroup.clearLayers();
+      leafletMarkersById = {};
+
+      filteredMarkers.forEach((marker) => {
+        const managerInfo = MANAGERS[marker.manager] || { color: '#334155', name: marker.manager };
+        const isSelected = marker.id === state.selectedMarkerId;
+        const size = isSelected ? 34 : 26;
+
+        const customIcon = L.divIcon({
+          className: 'custom-sml-pin',
+          html: `
+            <div style="
+              width: ${size}px;
+              height: ${size}px;
+              background-color: ${managerInfo.color};
+              border: 3px solid ${isSelected ? '#fbbf24' : '#ffffff'};
+              border-radius: 50%;
+              box-shadow: 0 3px 8px rgba(0,0,0,0.35);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: #ffffff;
+              font-weight: 800;
+              font-size: ${isSelected ? '13px' : '11px'};
+              font-family: Inter, system-ui, sans-serif;
+            ">
+              ${escapeHtml(marker.manager ? marker.manager.charAt(0) : '?')}
+            </div>
+          `,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
+          popupAnchor: [0, -size / 2],
+        });
+
+        const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+          marker.address || `${marker.name}, Argentina`
+        )}`;
+
+        const popupHtml = `
+          <div style="min-width: 210px; max-width: 260px; font-family: Inter, system-ui, sans-serif; padding: 2px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px;">
+              <span style="
+                background-color: ${managerInfo.color};
+                color: #ffffff;
+                font-size: 11px;
+                font-weight: 700;
+                padding: 2px 8px;
+                border-radius: 999px;
+              ">
+                GESTOR: ${escapeHtml(marker.manager)}
+              </span>
+              <span style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: 600;">
+                ${marker.type === 'provincia' ? 'Provincia/Zona' : 'Prestador'}
+              </span>
+            </div>
+            <h4 style="margin: 0 0 4px 0; font-size: 14px; font-weight: 700; color: #0f172a; line-height: 1.3;">
+              ${escapeHtml(marker.name)}
+            </h4>
+            ${
+              marker.address
+                ? `<p style="margin: 0 0 6px 0; font-size: 12px; color: #475569; line-height: 1.35;">
+                    📍 ${escapeHtml(marker.address)}
+                  </p>`
+                : ''
+            }
+            ${
+              marker.notes
+                ? `<div style="background: #f8fafc; border-left: 3px solid ${managerInfo.color}; padding: 5px 8px; margin-bottom: 8px; font-size: 11px; color: #334155;">
+                    ${escapeHtml(marker.notes)}
+                  </div>`
+                : ''
+            }
+            <a
+              href="${googleMapsUrl}"
+              target="_blank"
+              rel="noopener noreferrer"
+              style="
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                font-size: 11px;
+                font-weight: 600;
+                color: #2563eb;
+                text-decoration: none;
+              "
+            >
+              Abrir en Google Maps ↗
+            </a>
+          </div>
+        `;
+
+        const leafletMarker = L.marker([marker.lat, marker.lng], { icon: customIcon })
+          .bindPopup(popupHtml)
+          .on('click', () => {
+            selectMarker(marker.id, false);
+          });
+
+        leafletMarker.addTo(markersLayerGroup);
+        leafletMarkersById[marker.id] = leafletMarker;
+      });
+    }
+
+    // Seleccionar marcador y centrar mapa si corresponde
+    function selectMarker(id, flyToTarget = false) {
+      state.selectedMarkerId = id;
+      renderAll();
+
+      const target = state.markers.find((m) => m.id === id);
+      const leafletMarker = leafletMarkersById[id];
+      if (target && leafletMarker && map) {
+        if (flyToTarget) {
+          const targetZoom = target.type === 'prestador' ? 12 : 6;
+          map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), targetZoom), {
+            duration: 0.75,
+          });
+        }
+        leafletMarker.openPopup();
+      }
+    }
+
+    // Actualizar estilos de pestañas y renderizar todo
+    function renderAll() {
+      document.querySelectorAll('.layer-tab').forEach((tab) => {
+        const layer = tab.getAttribute('data-layer');
+        if (layer === state.activeLayer) {
+          tab.className =
+            'layer-tab py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all bg-white text-blue-700 shadow-sm';
+        } else {
+          tab.className =
+            'layer-tab py-2 px-3 rounded-lg text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all text-slate-600 hover:text-slate-900';
+        }
+      });
+
+      document.getElementById('view-badge-text').textContent =
+        state.activeLayer === 'provincia'
+          ? 'Vista: Mapa de Provincias y Zonas'
+          : 'Vista: Mapa de Prestadores';
+
+      const filtered = getFilteredMarkers();
+      renderManagerFilters();
+      renderSidebarList(filtered);
+      renderMapMarkers(filtered);
+    }
+
+    // --- GESTIÓN DEL FORMULARIO (CREAR / EDITAR) ---
+    function openFormModal(isEdit = false) {
+      const modal = document.getElementById('form-modal');
+      document.querySelector('#modal-title span').textContent = isEdit
+        ? 'Editar Registro en Mapa'
+        : 'Cargar Nueva Provincia o Prestador';
+      document.querySelector('#btn-submit-form span').textContent = isEdit
+        ? 'Guardar Cambios'
+        : 'Agregar al Mapa';
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      lucide.createIcons();
+    }
+
+    function closeFormModal() {
+      const modal = document.getElementById('form-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+    }
+
+    function handleCreateClick() {
+      state.editingId = null;
+      document.getElementById('field-type').value = state.activeLayer;
+      document.getElementById('field-manager').value =
+        state.selectedManager !== 'TODOS' ? state.selectedManager : 'MATI';
+      document.getElementById('field-name').value = '';
+      document.getElementById('field-address').value = '';
+      document.getElementById('field-lat').value = '';
+      document.getElementById('field-lng').value = '';
+      document.getElementById('field-notes').value = '';
+      setPickMode(false);
+      openFormModal(false);
+    }
+
+    function handleEditClick(id) {
+      const item = state.markers.find((m) => m.id === id);
+      if (!item) return;
+      state.editingId = id;
+      document.getElementById('field-type').value = item.type;
+      document.getElementById('field-manager').value = item.manager;
+      document.getElementById('field-name').value = item.name || '';
+      document.getElementById('field-address').value = item.address || '';
+      document.getElementById('field-lat').value = item.lat ?? '';
+      document.getElementById('field-lng').value = item.lng ?? '';
+      document.getElementById('field-notes').value = item.notes || '';
+      setPickMode(false);
+      openFormModal(true);
+    }
+
+    function handleDeleteClick(id) {
+      state.markers = state.markers.filter((m) => m.id !== id);
+      if (state.selectedMarkerId === id) state.selectedMarkerId = null;
+      renderAll();
+      showToast('Registro eliminado del mapa.', 'info');
+    }
+
+    // Geocodificación automática por dirección con Nominatim
+    async function handleGeocode() {
+      const addressVal = document.getElementById('field-address').value.trim();
+      const nameVal = document.getElementById('field-name').value.trim();
+      const queryText = addressVal || nameVal;
+
+      if (!queryText) {
+        showToast('Escribí una dirección o nombre primero.', 'error');
+        return;
+      }
+
+      const btnText = document.getElementById('btn-geocode-text');
+      btnText.textContent = 'Buscando...';
+
+      try {
+        const searchStr = queryText.toLowerCase().includes('argentina')
+          ? queryText
+          : `${queryText}, Argentina`;
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
+            searchStr
+          )}`
+        );
+        const data = await response.json();
+        if (data && data.length > 0) {
+          const result = data[0];
+          document.getElementById('field-lat').value = Number(parseFloat(result.lat).toFixed(5));
+          document.getElementById('field-lng').value = Number(parseFloat(result.lon).toFixed(5));
+          if (!addressVal) {
+            document.getElementById('field-address').value = result.display_name;
+          }
+          showToast('Ubicación encontrada en el mapa.', 'success');
+        } else {
+          showToast('No se hallaron coordenadas exactas. Probá marcar en el mapa.', 'error');
+        }
+      } catch (err) {
+        showToast('Error al buscar dirección. Marcá el punto directo en el mapa.', 'error');
+      } finally {
+        btnText.textContent = 'Ubicar';
+      }
+    }
+
+    // --- EVENTOS DE INICIALIZACIÓN ---
+    document.addEventListener('DOMContentLoaded', () => {
+      initMap();
+      renderAll();
+      lucide.createIcons();
+
+      // Cambio de pestaña (Provincias vs Prestadores)
+      document.querySelectorAll('.layer-tab').forEach((tab) => {
+        tab.addEventListener('click', () => {
+          const layer = tab.getAttribute('data-layer');
+          state.activeLayer = layer;
+          state.selectedMarkerId = null;
+          renderAll();
+          if (map) {
+            if (layer === 'provincia') {
+              map.flyTo([-38.4161, -63.6167], 4, { duration: 0.6 });
+            } else {
+              map.flyTo([-33.5, -61.5], 5, { duration: 0.6 });
+            }
+          }
+        });
+      });
+
+      // Búsqueda en tiempo real
+      document.getElementById('search-input').addEventListener('input', (e) => {
+        state.searchQuery = e.target.value;
+        renderAll();
+      });
+
+      // Botones del modal principal
+      document.getElementById('btn-open-create').addEventListener('click', handleCreateClick);
+      document.getElementById('btn-close-modal').addEventListener('click', closeFormModal);
+      document.getElementById('btn-cancel-form').addEventListener('click', closeFormModal);
+      document.getElementById('btn-geocode').addEventListener('click', handleGeocode);
+
+      // Activar selección en mapa desde el formulario
+      document.getElementById('btn-pick-on-map').addEventListener('click', () => {
+        closeFormModal();
+        setPickMode(true);
+      });
+
+      document.getElementById('btn-cancel-pick').addEventListener('click', () => {
+        setPickMode(false);
+        openFormModal(Boolean(state.editingId));
+      });
+
+      // Guardar formulario
+      document.getElementById('marker-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const type = document.getElementById('field-type').value;
+        const manager = document.getElementById('field-manager').value;
+        const name = document.getElementById('field-name').value.trim();
+        const address = document.getElementById('field-address').value.trim();
+        const notes = document.getElementById('field-notes').value.trim();
+        const lat = parseFloat(document.getElementById('field-lat').value);
+        const lng = parseFloat(document.getElementById('field-lng').value);
+
+        if (!name || isNaN(lat) || isNaN(lng)) {
+          showToast('Completá el nombre y coordenadas válidas.', 'error');
+          return;
+        }
+
+        if (state.editingId) {
+          state.markers = state.markers.map((m) =>
+            m.id === state.editingId ? { ...m, type, manager, name, address, notes, lat, lng } : m
+          );
+          state.activeLayer = type;
+          closeFormModal();
+          selectMarker(state.editingId, true);
+          showToast('Información actualizada correctamente.', 'success');
+        } else {
+          const newId = `custom-${Date.now()}`;
+          state.markers.unshift({ id: newId, type, manager, name, address, notes, lat, lng });
+          state.activeLayer = type;
+          closeFormModal();
+          selectMarker(newId, true);
+          showToast('Nuevo punto agregado al mapa.', 'success');
+        }
+        state.editingId = null;
+      });
+
+      // Exportar datos a JSON
+      document.getElementById('btn-export-json').addEventListener('click', () => {
+        const blob = new Blob([JSON.stringify(state.markers, null, 2)], {
+          type: 'application/json',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'zonas-prestadores-sml.json';
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('Archivo JSON descargado.', 'success');
+      });
+
+      // Importar datos desde JSON
+      document.getElementById('input-import-json').addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          try {
+            const parsed = JSON.parse(ev.target.result);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              state.markers = parsed;
+              state.selectedMarkerId = null;
+              renderAll();
+              showToast(`Se cargaron ${parsed.length} registros desde el archivo.`, 'success');
+            } else {
+              showToast('El archivo JSON no tiene el formato esperado.', 'error');
+            }
+          } catch (err) {
+            showToast('No se pudo leer el archivo JSON.', 'error');
+          }
+          e.target.value = '';
+        };
+        reader.readAsText(file);
+      });
+
+      // Restaurar datos originales con modal de confirmación
+      document.getElementById('btn-reset-defaults').addEventListener('click', () => {
+        openConfirmModal(
+          'Restaurar datos originales',
+          'Se volverán a cargar únicamente los datos iniciales de la planilla Zonas SML.',
+          () => {
+            state.markers = JSON.parse(JSON.stringify(INITIAL_MARKERS));
+            state.selectedMarkerId = null;
+            renderAll();
+            showToast('Datos originales restaurados.', 'success');
+          }
+        );
+      });
+
+      document.getElementById('btn-confirm-cancel').addEventListener('click', closeConfirmModal);
+      document.getElementById('btn-confirm-accept').addEventListener('click', () => {
+        if (typeof state.confirmCallback === 'function') {
+          state.confirmCallback();
+        }
+        closeConfirmModal();
+      });
+    });
+  </script>
+</body>
+</html>
